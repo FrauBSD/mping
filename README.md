@@ -1,0 +1,2 @@
+# mping
+Ping multiple hosts
