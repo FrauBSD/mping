@@ -1,0 +1,313 @@
+#!/bin/sh
+############################################################ IDENT(1)
+#
+# $Title: Script to ping multiple hosts $
+# $Copyright: 2017-2018 Devin Teske. All rights reserved. $
+# $FrauBSD: mping/mping 2018-06-17 23:09:55 +0000 freebsdfrau $
+#
+############################################################ CONFIGURATION
+
+#
+# Default ping(8) timeout in seconds
+#
+DEFAULT_PING_WAIT=5
+
+#
+# Default watch seconds if given `-d' or `-t' but not `-n seconds'
+#
+DEFAULT_WATCHSECONDS=2
+
+#
+# Default sound effect
+# NB: Enabled with `-s'
+# NB: Override with `-S name'
+#
+DEFAULT_SOUNDEFFECT=Submarine
+
+#
+# Where sound effects are located and what format (file suffix) to use
+#
+SOUNDDIR=/System/Library/Sounds
+SOUNDFMT=aiff
+
+############################################################ GLOBALS
+
+VERSION='$Version: 0.1.2 $'
+
+pgm="${0##*/}" # Program basename
+
+#
+# Global exit status
+#
+SUCCESS=0
+FAILURE=1
+
+#
+# OS Glue
+#
+: ${UNAME_s:=$( uname -s )}
+
+#
+# Command-line options
+#
+DIFF=					# -d
+NOTITLE=				# -t
+PING_WAIT=$DEFAULT_PING_WAIT		# -W seconds
+SOUND=					# -s
+SOUNDEFFECT=$DEFAULT_SOUNDEFFECT	# -S name
+WATCHSECONDS=$DEFAULT_WATCHSECONDS	# -n seconds
+WATCH=					# -n seconds
+
+#
+# Miscellaneous
+#
+COLS=
+HDRFMT=
+LEN=
+ROWS=
+SIZE=
+SOUNDFILE=
+
+############################################################ FUNCTIONS
+
+have(){ type "$@" > /dev/null 2>&1; }
+
+usage()
+{
+	local optfmt="\t%-13s %s\n"
+	exec >&2
+	printf "Usage: %s [OPTIONS] host ...\n" "$pgm"
+	printf "Examples:\n"
+	printf "\t%s d{10..18}-{1..2}\n" "$pgm"
+	printf "\t%s 10.101.3.{1..255}\n" "$pgm"
+	printf "\t%s -n5 be5-{{1..9},{20..26}}\n" "$pgm"
+	printf "OPTIONS:\n"
+	printf "$optfmt" "-d" \
+	    "Only play sound when differences are detected between"
+	printf "$optfmt" "" \
+	    "successive updates (implies \`-w')."
+	printf "$optfmt" "-n seconds" \
+	    "Keep running and update output after seconds."
+	printf "$optfmt" "-s" \
+	    "Enable sound. Play sound effect before each ping."
+	printf "$optfmt" "-S name" \
+	    "Set sound effect name played before each ping (Default"
+	printf "$optfmt" "" \
+	    "\`$DEFAULT_SOUNDEFFECT'; implies \`-s')."
+	printf "$optfmt" "-t" \
+	    "Disable title/column header displayed above results."
+	printf "$optfmt" "-v" \
+	    "Print version on standard output and exit."
+	printf "$optfmt" "-w" \
+	    "Update every $DEFAULT_WATCHSECONDS seconds (override seconds with"
+	printf "$optfmt" "" \
+	    "\`-n seconds')."
+	printf "$optfmt" "-W seconds" \
+	    "Timeout in seconds before ping(8) gives up on host."
+	exit $FAILURE
+}
+
+version()
+{
+	local vers="${VERSION#*: }"
+	echo "${vers% $}"
+	exit $SUCCESS
+}
+
+ping_sound()
+{
+	[ "$SOUND" ] || return
+	if have afplay; then
+		( afplay "$SOUNDFILE" > /dev/null 2>&1 & ) > /dev/null 2>&1
+	else
+		printf "\a"
+	fi
+}
+
+multiple_ping()
+{
+	[ "$DIFF" ] || ping_sound
+	export COLS LEN PING_WAIT ROWS WATCH
+	stty_size
+	echo $* | xargs -P$nproc -n1 sh -c '
+		color=31 status=down host="$1" end="\r"
+		[ "$WATCH" ] && end="\033[$ROWS;${COLS}H"
+		printf "\r\033[2m%s\033[22m\033[K$end" "$host" >&3
+		if res=$( ping -c 1 -W "$PING_WAIT" $host 2>&1 ); then
+			color=32 status=UP
+		else
+			case "$res" in
+			"ping: unknown host "*|"ping: cannot resolve "*)
+				color=33 status=unknown
+			esac
+		fi
+		rcolor=
+		reverse=$( host -W1 "$host" |
+			awk '\''{print $NF}'\'' 2> /dev/null )
+		case "$reverse" in
+		"3(NXDOMAIN)") rcolor=33 reverse=unknown ;;
+		*"timed out"*) rcolor=33 reverse=timeout ;;
+		*) reverse="${reverse%.}"
+		esac
+		fmt="\033[36m%-*s\033[39m"
+		fmt="$fmt \033[%sm%-7s\033[39;22m"
+		fmt="$fmt \t${rcolor:+\033[${rcolor}m}%s${rcolor:+\033[39m}"
+		printf "$fmt\n" $LEN "$host" $color $status "$reverse"
+	' sh | sort
+	printf "\r\033[K${WATCH:+"\033[$ROWS;${COLS}H" }" >&3
+}
+
+stty_size()
+{
+	SIZE=$( stty size 2> /dev/null )
+	ROWS="${SIZE%%[$IFS]*}"
+	COLS="${SIZE#*[$IFS]}"
+}
+
+header()
+{
+	[ "$NOTITLE" ] && return
+	[ "$WATCH" ] && printf "\033[J" # Clear from cursor to end of screen
+	if [ ! "$HDRFMT" ]; then
+		# Initialize global variable
+		local colhdr pre
+		colhdr=$( printf "\033[1m%-*s %-7s \t%s\033[22m\n\r" \
+			$LEN HOST STATUS REVERSE )
+		pre=$( printf "Every %.1fs [%s Processors] [%.1fs t/o] " \
+			"$WATCHSECONDS" "$nproc" "$PING_WAIT" )
+		if [ "$WATCH" ]; then
+			if [ "$COLS" ]; then
+				HDRFMT="$pre%$(( $COLS - ${#pre} ))s"
+			else
+				HDRFMT="$pre\t%s"
+			fi
+			HDRFMT="$HDRFMT\n\n"
+		fi
+		HDRFMT="$HDRFMT$colhdr"
+	fi
+	if [ "$WATCH" ]; then
+		printf "$HDRFMT" "$( date )"
+	else
+		printf "$HDRFMT"
+	fi
+}
+
+dump()
+{
+	local display="$1"
+	local end=
+	local numrows
+
+	stty_size
+
+	numrows="$ROWS"
+	[ "$NOTITLE" ] || numrows=$(( $numrows - 4 ))
+	[ "$numrows" ] && display=$( echo "$display" | head -n "$numrows" )
+
+	[ "$ROWS" -a "$COLS" ] && end="\033[$ROWS;${COLS}H"
+	printf "\033[H\033[K%s%s$end" "$( header )" "$display"
+}
+
+############################################################ MAIN
+
+#
+# Process command-line options
+#
+while getopts dn:sS:tvwW: flag; do
+	case "$flag" in
+	d) WATCH=1 SOUND=1 DIFF=1 ;;
+	n) WATCH=1 WATCHSECONDS="$OPTARG" ;;
+	s) SOUND=1 ;;
+	S) SOUND=1 SOUNDEFFECT="$OPTARG" ;;
+	t) NOTITLE=1 ;;
+	v) version ;; # NOTREACHED
+	w) WATCH=1 ;;
+	W) PING_WAIT="$OPTARG" ;;
+	*) usage # NOTREACHED
+	esac
+done
+shift $(( $OPTIND - 1 ))
+
+#
+# Check command-line arguments
+#
+[ $# -gt 0 ] || usage # NOTREACHED
+
+#
+# Validate sound effect [if enabled]
+#
+if [ "$SOUND" ] && have afplay; then
+	case "$SOUNDEFFECT" in
+	*/*) SOUNDFILE="$SOUNDEFFECT" ;;
+	*.*) SOUNDFILE="$SOUNDEFFECT"
+	     [ -e "$SOUNDFILE" ] || SOUNDFILE="$SOUNDDIR/$SOUNDFILE" ;;
+	  *) SOUNDFILE="$SOUNDEFFECT.$SOUNDFMT"
+	     [ -e "$SOUNDFILE" ] || SOUNDFILE="$SOUNDDIR/$SOUNDFILE"
+	esac
+	if [ ! -e "$SOUNDFILE" ]; then
+		echo "$pgm: $SOUNDFILE: No such file or directory" >&2
+		exit $FAILURE
+	fi
+fi
+
+#
+# Get number of logical CPUs
+#
+nproc=$( getconf _NPROCESSORS_ONLN 2> /dev/null ) ||
+	nproc=$( getconf NPROCESSORS_ONLN 2> /dev/null ) || nproc=1
+
+#
+# Get the longest argument length
+# NB: For columnar alignment (below)
+#
+LEN=$( echo $* | tr '[:space:]' '\n' | awk '
+	L = (len = length($0)) > L ? len : L { }
+	END { print L }
+' )
+
+#
+# Adjust ping time to be milliseconds on FreeBSD/Mac OS X
+#
+case "$UNAME_r" in
+FreeBSD|Darwin) PING_WAIT=$(( $PING_WAIT * 1000 - 1000 ))
+esac
+
+#
+# Ping hosts once and exit if not given `-n seconds', `-d', nor `-t'
+#
+exec 3<&1
+if [ ! "$WATCH" ]; then
+	header
+	multiple_ping $*
+	exit $SUCCESS
+fi
+
+#
+# Ping hosts in-parallel (up to ncpu concurrency) and sort output
+#
+clear
+dump
+old_display=
+while :; do
+	#
+	# Refresh data
+	#
+	display=$( multiple_ping $* )
+	[ "$DIFF" -a "$display" != "$old_display" ] && ping_sound
+	old_display="$display"
+
+	#
+	# Render data
+	#
+	dump "$display"
+	sleep "$WATCHSECONDS"
+done
+
+#
+# All done
+#
+exit $SUCCESS
+
+################################################################################
+# END
+################################################################################
