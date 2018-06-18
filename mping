@@ -3,7 +3,7 @@
 #
 # $Title: Script to ping multiple hosts $
 # $Copyright: 2017-2018 Devin Teske. All rights reserved. $
-# $FrauBSD: mping/mping 2018-06-17 23:09:55 +0000 freebsdfrau $
+# $FrauBSD: mping/mping 2018-06-18 18:18:11 +0000 freebsdfrau $
 #
 ############################################################ CONFIGURATION
 
@@ -32,7 +32,7 @@ SOUNDFMT=aiff
 
 ############################################################ GLOBALS
 
-VERSION='$Version: 0.1.2 $'
+VERSION='$Version: 0.1.3 $'
 
 pgm="${0##*/}" # Program basename
 
