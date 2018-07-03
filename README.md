@@ -1,4 +1,4 @@
-[//]: # ($FrauBSD: mping/README.md 2018-07-03 01:59:47 +0000 freebsdfrau $)
+[//]: # ($FrauBSD: mping/README.md 2018-07-03 02:03:06 +0000 freebsdfrau $)
 
 # mping
 
@@ -13,10 +13,10 @@ FreeBSD. Supports playing custom sounds on Mac OS X with afplay utility.
 Quickly get status on one or more hosts using ping. Automatically takes
 advantage of multiple CPUs and will ping multiple hosts in parallel.
 
-Watch changes in ping status with "-d" for differential mode to alert you when
+Watch changes in ping status with `-d` for differential mode to alert you when
 changes take place.
 
-Use shell expansion features such as 192.168.0.{1..254} to quickly scan for
+Use shell expansion features such as `192.168.0.{1..254}` to quickly scan for
 unused IP addresses (if applicable).
 
 ## Foreword
