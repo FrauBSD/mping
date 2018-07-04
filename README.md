@@ -1,6 +1,6 @@
-[//]: # ($FrauBSD: mping/README.md 2018-07-03 02:03:06 +0000 freebsdfrau $)
+[//]: # ($FrauBSD: mping/README.md 2018-07-04 06:45:29 +0000 freebsdfrau $)
 
-# mping
+# Welcome to [FrauBSD.org/mping](https://fraubsd.org/mping)!
 
 Ping multiple hosts
 
